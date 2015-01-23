@@ -81,26 +81,31 @@ CONF.import_opt('compute_topic', 'nova.compute.rpcapi')
 LOG = logging.getLogger(__name__)
 
 
-_ENGINE_FACADE = None
+_ENGINE_FACADE = collections.defaultdict(None)
 _LOCK = threading.Lock()
 
 
-def _create_facade_lazily():
+def _create_facade_lazily(connection_url=None, params=None):
     global _LOCK, _ENGINE_FACADE
-    if _ENGINE_FACADE is None:
+    if _ENGINE_FACADE[connection_url] is None:
         with _LOCK:
-            if _ENGINE_FACADE is None:
-                _ENGINE_FACADE = db_session.EngineFacade.from_config(CONF)
-    return _ENGINE_FACADE
+            if _ENGINE_FACADE[connection_url] is None:
+                if connection_url is None:
+                    _ENGINE_FACADE = db_session.EngineFacade.from_config(CONF)
+                else:
+                    if params is None:
+                        params = {}
+                    _ENGINE_FACADE = db_session.EngineFacade(connection_url, **params)
+    return _ENGINE_FACADE[connection_url]
 
 
-def get_engine(use_slave=False):
-    facade = _create_facade_lazily()
+def get_engine(use_slave=False, connection_url=None, params=None):
+    facade = _create_facade_lazily(connection_url, params)
     return facade.get_engine(use_slave=use_slave)
 
 
-def get_session(use_slave=False, **kwargs):
-    facade = _create_facade_lazily()
+def get_session(use_slave=False, connection_url=None, params=None, **kwargs):
+    facade = _create_facade_lazily(connection_url, params)
     return facade.get_session(use_slave=use_slave, **kwargs)
 
 
@@ -197,7 +202,9 @@ def model_query(context, model,
                 session=None,
                 use_slave=False,
                 read_deleted=None,
-                project_only=False):
+                project_only=False,
+                connection_url=None,
+                params=None):
     """Query helper that accounts for context's `read_deleted` field.
 
     :param context:     NovaContext of the query.
@@ -219,7 +226,9 @@ def model_query(context, model,
     if session is None:
         if CONF.database.slave_connection == '':
             use_slave = False
-        session = get_session(use_slave=use_slave)
+        session = get_session(connection_url=connection_url,
+                              params=params,
+                              use_slave=use_slave)
 
     if read_deleted is None:
         read_deleted = context.read_deleted
@@ -345,8 +354,8 @@ class InequalityCondition(object):
 
 
 @require_admin_context
-def service_destroy(context, service_id):
-    session = get_session()
+def service_destroy(context, service_id), connection_url=None, params=None:
+    session = get_session(connection_url, params)
     with session.begin():
         count = model_query(context, models.Service, session=session).\
                     filter_by(id=service_id).\
