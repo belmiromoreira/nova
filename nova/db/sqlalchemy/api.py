@@ -81,7 +81,7 @@ CONF.import_opt('compute_topic', 'nova.compute.rpcapi')
 LOG = logging.getLogger(__name__)
 
 
-_ENGINE_FACADE = collections.defaultdict(None)
+_ENGINE_FACADE = collections.defaultdict(lambda: None)
 _LOCK = threading.Lock()
 
 
@@ -91,11 +91,12 @@ def _create_facade_lazily(connection_url=None, params=None):
         with _LOCK:
             if _ENGINE_FACADE[connection_url] is None:
                 if connection_url is None:
-                    _ENGINE_FACADE = db_session.EngineFacade.from_config(CONF)
+                    _ENGINE_FACADE[connection_url] = db_session.EngineFacade.from_config(CONF)
                 else:
                     if params is None:
                         params = {}
-                    _ENGINE_FACADE = db_session.EngineFacade(connection_url, **params)
+                    _ENGINE_FACADE[connection_url] = db_session.EngineFacade(connection_url,
+                                                             **params)
     return _ENGINE_FACADE[connection_url]
 
 
@@ -354,7 +355,7 @@ class InequalityCondition(object):
 
 
 @require_admin_context
-def service_destroy(context, service_id), connection_url=None, params=None:
+def service_destroy(context, service_id, connection_url=None, params=None):
     session = get_session(connection_url, params)
     with session.begin():
         count = model_query(context, models.Service, session=session).\
